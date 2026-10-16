@@ -156,3 +156,54 @@ function cleanTxt(s){var o=dec(String(s));o=o.replace(/https?:\/\/t\.co\/[A-Za-z
 function pickTxt(n){if(typeof n.full_text==='string'&&n.full_text.trim())return n.full_text;if(typeof n.text==='string'&&n.text.trim())return n.text;if(n.content&&typeof n.content==='object'&&typeof n.content.text==='string'&&n.content.text.trim())return n.content.text;return null}
 function extract(root){var out=[],seen={};(function visit(n,d){if(!n||typeof n!=='object'||d>12)return;if(Array.isArray(n)){n.forEach(function(x){visit(x,d+1)});return}var t=pickTxt(n);var hId=n.id_str||n.id||n.rest_id;var hD=n.created_at||n.createdAt;if(t&&(hId||hD)){var k=t.slice(0,90);if(!seen[k]){seen[k]=true;out.push({text:cleanTxt(t),created:hD||''})}}for(var k in n){if(!Object.prototype.hasOwnProperty.call(n,k))continue;if(k==='text'||k==='full_text')continue;visit(n[k],d+1)}})(root,0);return out.filter(function(t){return t.text.length>0})}
 function fetchTweets(u){var ep='https://cdn.syndication.twimg.com/timeline/profile?screen_name='+encodeURIComponent(u)+'&dnt=false&with_replies=false&lang=ar';return getJSON(ep,8000).catch(function(e){if(e&&e.status===404){var n=new Error('nf');n.code='notfound';throw n}return getJSON('https://api.allorigins.win/raw?url='+encodeURIComponent(ep),11000)}).then(function(d){var t=extract(d);if(!t.length){var em=new Error('e');em.code='empty';throw em}return t.slice(0,3)}).catch(function(e){if(e&&e.code)throw e;if(e&&e.status===404){var n2=new Error('nf');n2.code='notfound';throw n2}throw e})}
+function Ticker(vp,tr){this.vp=vp;this.tr=tr;this.off=0;this.setH=0;this.sp=16;this.paused=false;this.vis=true;this.raf=null;this.last=0;this.red=matchMedia('(prefers-reduced-motion:reduce)').matches}
+Ticker.prototype.setItems=function(items){this.stop();this.tr.innerHTML='';this.off=0;this.tr.style.transform='translateY(0)';if(!items||!items.length){this.setH=0;return}var vh=this.vp.clientHeight||120;var sh=items.length*ITEM_H;var rp=Math.max(2,Math.ceil((vh+sh)/sh)+1);this.setH=sh;var f=document.createDocumentFragment();for(var r=0;r<rp;r++){items.forEach(function(t){var row=document.createElement('div');row.className='tw';var s=document.createElement('span');s.setAttribute('dir','auto');s.textContent=t.text;row.appendChild(s);f.appendChild(row)})}this.tr.appendChild(f);if(!this.red)this.start()};
+Ticker.prototype.start=function(){if(this.raf||this.red)return;var self=this;this.last=0;function step(ts){if(!self.last)self.last=ts;var dt=(ts-self.last)/1000;self.last=ts;if(dt>0.1)dt=0.1;if(!self.paused&&self.vis&&self.setH>0){self.off+=self.sp*dt;if(self.off>=self.setH)self.off-=self.setH;self.tr.style.transform='translateY('+(-self.off).toFixed(2)+'px)'}self.raf=requestAnimationFrame(step)}this.raf=requestAnimationFrame(step)};
+Ticker.prototype.stop=function(){if(this.raf){cancelAnimationFrame(this.raf);this.raf=null}};
+function createCard(acc){
+var el=document.createElement('article');
+el.className='card';el.dataset.id=acc.id;el.dataset.state='loading';
+el.innerHTML='<button class="card-del" type="button" aria-label="حذف"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button><div class="card-head"><button class="avatar" type="button" aria-label="صورة"><svg class="avatar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.6"/><path d="M4.8 19.6c1.3-3.2 4-4.8 7.2-4.8s5.9 1.6 7.2 4.8"/></svg><span class="initial"></span><img class="avatar-img" alt=""></button><div class="meta"><div class="name-row"><input class="name-input" type="text" maxlength="40" aria-label="اسم"><input class="color-input" type="color" aria-label="لون"></div><div class="handle" dir="ltr"></div></div></div><div class="ticker"><div class="ticker-viewport"><div class="ticker-track"></div></div><div class="ticker-status"></div></div><input type="file" class="file-input" accept="image/*" hidden>';
+var avBtn=el.querySelector('.avatar'),avImg=el.querySelector('.avatar-img'),initEl=el.querySelector('.initial'),fileIn=el.querySelector('.file-input'),nameIn=el.querySelector('.name-input'),colIn=el.querySelector('.color-input'),handle=el.querySelector('.handle'),trk=el.querySelector('.ticker-track'),vpt=el.querySelector('.ticker-viewport'),sts=el.querySelector('.ticker-status'),delB=el.querySelector('.card-del');
+var tk=new Ticker(vpt,trk);
+var rec={acc:acc,el:el,ticker:tk,statusEl:sts,setInitial:setInit,applyNameColor:applyNameColor};
+function renderAv(){if(acc.avatar){avImg.src=acc.avatar;avBtn.classList.add('has-img')}else{avImg.removeAttribute('src');avBtn.classList.remove('has-img')}}
+function setInit(){var s=(acc.name&&acc.name.trim())?acc.name.trim():(acc.username||'?');initEl.textContent=s.charAt(0).toUpperCase()}
+function applyNameColor(){nameIn.style.color=readable(acc.color,isDark())}
+avBtn.addEventListener('click',function(){fileIn.click()});
+fileIn.addEventListener('change',function(){var f=fileIn.files&&fileIn.files[0];if(!f)return;if(!/^image\//.test(f.type)){showHint('ملف صورة غير صالح','err');fileIn.value='';return}fileToSquare(f,160).then(function(d){acc.avatar=d;renderAv();save();showHint('تم تحديث شعار @'+acc.username,'ok')}).catch(function(){showHint('تعذّرت معالجة الصورة','err')}).finally(function(){fileIn.value=''})});
+nameIn.value=acc.name;
+colIn.value=hexToRgb(acc.color)?'#'+rgbToHex(hexToRgb(acc.color)).slice(1):'#0E7C5A';
+applyNameColor();
+handle.textContent='@'+acc.username;
+nameIn.addEventListener('input',function(){acc.name=nameIn.value.slice(0,40);setInit();save()});
+nameIn.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();nameIn.blur()}});
+function onCol(){acc.color=colIn.value;applyNameColor();save()}
+colIn.addEventListener('input',onCol);colIn.addEventListener('change',onCol);
+delB.addEventListener('click',function(){removeAccount(acc.id)});
+vpt.addEventListener('mouseenter',function(){tk.paused=true});
+vpt.addEventListener('mouseleave',function(){tk.paused=false});
+vpt.addEventListener('touchstart',function(){tk.paused=true},{passive:true});
+vpt.addEventListener('touchend',function(){tk.paused=false},{passive:true});
+if('IntersectionObserver' in window){var io=new IntersectionObserver(function(es){es.forEach(function(en){tk.vis=en.isIntersecting})},{threshold:0});io.observe(el)}
+setInit();renderAv();
+return rec;
+}
+function showStatus(rec,kind,msg){var el=rec.statusEl;el.innerHTML='';var box=document.createElement('div');box.className='status-box';if(kind==='loading'){box.innerHTML='<span class="spinner"></span><span>'+esc(msg)+'</span>'}else{box.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.6M12 16h.01"/></svg><span>'+esc(msg)+'</span>';var b=document.createElement('button');b.type='button';b.className='retry-btn';b.textContent='إعادة المحاولة';b.addEventListener('click',function(){loadTweets(rec,false)});box.appendChild(b)}el.appendChild(box);rec.el.dataset.state=kind}
+function loadTweets(rec,silent){var acc=rec.acc;if(!silent)showStatus(rec,'loading','جارٍ تحميل التغريدات…');return fetchTweets(acc.username).then(function(t){acc.tweets=t;acc.fetchedAt=Date.now();save();rec.ticker.setItems(t);rec.el.dataset.state='ok'}).catch(function(e){if(silent)return;var c=e&&e.code;if(c==='notfound')showStatus(rec,'error','لم يتم العثور على @'+acc.username);else if(c==='empty')showStatus(rec,'error','لا توجد تغريدات متاحة حالياً');else showStatus(rec,'error','تعذّر تحميل التغريدات — أعد المحاولة')})}
+function initCard(rec){var a=rec.acc;if(a.tweets&&a.tweets.length){rec.ticker.setItems(a.tweets);rec.el.dataset.state='ok';if(Date.now()-(a.fetchedAt||0)>CACHE_TTL)loadTweets(rec,true)}else loadTweets(rec,false)}
+function mountCard(acc){var r=createCard(acc);boardEl.appendChild(r.el);cards.set(acc.id,r);return r}
+function removeAccount(id){var r=cards.get(id);if(r){r.ticker.stop();r.el.style.transition='opacity .18s,transform .18s';r.el.style.opacity='0';r.el.style.transform='scale(.96)';var n=r.el;setTimeout(function(){n.remove()},180);cards.delete(id)}accounts=accounts.filter(function(a){return a.id!==id});save();updateEmpty()}
+function updateEmpty(){emptyEl.style.display=accounts.length?'none':'block';countEl.textContent=String(accounts.length)}
+var hintTimer=null;
+function showHint(m,t){hintEl.textContent=m||'';hintEl.className='hint'+(t?' '+t:'');if(hintTimer)clearTimeout(hintTimer);if(m&&t==='ok')hintTimer=setTimeout(function(){hintEl.textContent='';hintEl.className='hint'},3500)}
+function addAccount(raw){var u=parseUser(raw);if(!u){showHint('أدخل اسم مستخدم صحيحاً مثل: @KSRelief','err');return}var ex=accounts.some(function(a){return a.username.toLowerCase()===u.toLowerCase()});if(ex){showHint('الجهة @'+u+' مضافة بالفعل','err');return}var acc={id:uid(),username:u,name:u,color:PALETTE[accounts.length%PALETTE.length],avatar:'',tweets:null,fetchedAt:0};accounts.push(acc);save();var r=mountCard(acc);initCard(r);updateEmpty();showHint('تمت إضافة @'+u,'ok');inputEl.value='';inputEl.focus();r.el.scrollIntoView({behavior:'smooth',block:'nearest'})}
+formEl.addEventListener('submit',function(e){e.preventDefault();addAccount(inputEl.value)});
+var mq=matchMedia('(prefers-color-scheme:dark)');
+if(mq.addEventListener)mq.addEventListener('change',function(){cards.forEach(function(r){r.applyNameColor()})});
+function boot(){accounts.forEach(function(a){var r=mountCard(a);initCard(r)});updateEmpty()}
+boot();
+})();
+</script>
+</body>
+</html>
